@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calculadora de recibos (Luz, Agua, Gas) - Comunidad</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Calculadora de recibos — Luz, Agua y Gas</h1>
+    <p class="intro">
+      Esta página calcula cuánto paga cada piso/unidad. Los datos se guardan automáticamente en tu navegador para que no tengas que escribirlos cada vez.
+    </p>
+
+    <section class="panel">
+      <h2>Unidades y personas</h2>
+      <p>Agrega o edita las unidades (ej: 101, 201, 202...). Indica cuántas personas viven en cada unidad.</p>
+      <div id="units-list"></div>
+      <div class="inline">
+        <input id="new-unit-name" placeholder="Nombre unidad (ej. 101)" />
+        <input id="new-unit-people" type="number" min="0" value="1" style="width:5.5rem" />
+        <button id="add-unit">Agregar unidad</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>ELECTRICIDAD — Recibo A (201 & 202)</h2>
+      <p>Recibo que incluye los kws totales y precio total. Se saca precio por kWh = totalPrecio / totalKwh.</p>
+      <div class="grid">
+        <label>Total kWh (recibo A): <input id="ea-total-kwh" type="number" min="0" step="0.01"></label>
+        <label>Precio total (recibo A): <input id="ea-total-price" type="number" min="0" step="0.01"></label>
+        <label>Lectura anterior 202: <input id="ea-prev-202" type="number" min="0" step="0.01"></label>
+        <label>Lectura actual 202: <input id="ea-curr-202" type="number" min="0" step="0.01"></label>
+      </div>
+
+      <h2>ELECTRICIDAD — Recibo B (401, 500 y 402 calculada)</h2>
+      <p>Otro recibo con sus kws totales y precio. Se calcula consumo por 401 y 500 por diferencia de lecturas y 402 = totalReciboB - 401 - 500.</p>
+      <div class="grid">
+        <label>Total kWh (recibo B): <input id="eb-total-kwh" type="number" min="0" step="0.01"></label>
+        <label>Precio total (recibo B): <input id="eb-total-price" type="number" min="0" step="0.01"></label>
+        <label>Lectura anterior 401: <input id="eb-prev-401" type="number" min="0" step="0.01"></label>
+        <label>Lectura actual 401: <input id="eb-curr-401" type="number" min="0" step="0.01"></label>
+        <label>Lectura anterior 500: <input id="eb-prev-500" type="number" min="0" step="0.01"></label>
+        <label>Lectura actual 500: <input id="eb-curr-500" type="number" min="0" step="0.01"></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>AGUA (por cabeza)</h2>
+      <div class="grid">
+        <label>Total factura agua: <input id="water-total-price" type="number" min="0" step="0.01"></label>
+      </div>
+      <p>Se divide entre personas totales (suma de personas de todas las unidades). Luego cada unidad paga: personasUnidad * precioPorCabeza.</p>
+    </section>
+
+    <section class="panel">
+      <h2>GAS (por recibos por grupos)</h2>
+      <div class="grid">
+        <label>Total factura gas (201+202): <input id="gas-201-202-price" type="number" min="0" step="0.01"></label>
+        <label>Total factura gas (401+402): <input id="gas-401-402-price" type="number" min="0" step="0.01"></label>
+      </div>
+      <p>Cada recibo se divide por la suma de personas de las unidades incluidas en ese recibo y se multiplica por las personas de cada unidad del grupo.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Extras (parqueadero u otros)</h2>
+      <p>Puedes agregar cargos extras y decidir si se reparten igual entre todas las unidades o asignarlos a unidades específicas.</p>
+      <div id="extras-list"></div>
+      <div class="inline">
+        <input id="extra-name" placeholder="Nombre extra (ej. Parqueadero)" />
+        <input id="extra-amount" type="number" min="0" step="0.01" placeholder="Monto" />
+        <select id="extra-type">
+          <option value="equal">Repartir igual entre todas las unidades</option>
+          <option value="per-unit">Asignar a unidad específica</option>
+        </select>
+        <select id="extra-unit-select"></select>
+        <button id="add-extra">Agregar extra</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Resumen por unidad</h2>
+      <div id="results"></div>
+      <div class="actions">
+        <button id="reset-all">Borrar todos los datos guardados</button>
+        <button id="export-json">Exportar datos (JSON)</button>
+        <button id="import-json">Importar datos (JSON)</button>
+        <input id="import-file" type="file" accept="application/json" style="display:none" />
+      </div>
+    </section>
+
+    <footer>
+      <small>Guardado localmente en tu navegador. Si quieres compartir o usar entre dispositivos, exporta el JSON y luego impórtalo.</small>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
