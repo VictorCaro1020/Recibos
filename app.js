@@ -7,18 +7,29 @@ const STORAGE_KEY = 'utilityCalcData_v1';
 function $i(id){ return document.getElementById(id); }
 function save(data){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 function load(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null } catch(e){ return null } }
-function formatMoney(v){ return Number(v || 0).toFixed(2) }
+function formatMoney(v){
+  const n = Number(v || 0);
+  // round to 2 decimals, then trim trailing zeros
+  const fixed = n.toFixed(2);
+  const [intPart, decPart] = fixed.split('.');
+  // thousands separator: dot
+  const intWithDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  // remove trailing zeros in decimal part
+  const decTrimmed = decPart.replace(/0+$/,'');
+  if(decTrimmed === '') return intWithDots;
+  return `${intWithDots},${decTrimmed}`;
+}
 
 // ---------- DEFAULT DATA ----------
 const defaultData = {
   units: [
-    { id: '101', people: 1 },
-    { id: '201', people: 1 },
-    { id: '202', people: 1 },
-    { id: '300', people: 1 },
-    { id: '401', people: 1 },
-    { id: '402', people: 1 },
-    { id: '500', people: 1 }
+    { id: '101', people: 1, rent: 0 },
+    { id: '201', people: 1, rent: 0 },
+    { id: '202', people: 1, rent: 0 },
+    { id: '300', people: 1, rent: 0 },
+    { id: '401', people: 1, rent: 0 },
+    { id: '402', people: 1, rent: 0 },
+    { id: '500', people: 1, rent: 0 }
   ],
   // Electricity receipt A (201+202)
   ea: { totalKwh: 0, totalPrice: 0, prev202: 0, curr202: 0 },
@@ -28,9 +39,9 @@ const defaultData = {
   water: { totalPrice: 0 },
   // Gas
   gas: { price201_202: 0, price401_402: 0 },
-  // Extras
+  // Extras (por unidad)
   extras: [
-    // { id, name, amount, type: 'equal'|'per-unit', unitId: '101' }
+    // { id, name, amount, unitId: '101' }
   ]
 };
 
@@ -47,15 +58,27 @@ function renderUnits(){
     nameInput.addEventListener('change', ()=>{ u.id = nameInput.value.trim() || u.id; syncAndSave(); renderUnits(); renderExtrasEditor(); computeAndRender(); });
     const peopleInput = document.createElement('input'); peopleInput.type='number'; peopleInput.min=0; peopleInput.value = u.people;
     peopleInput.addEventListener('change', ()=>{ u.people = Math.max(0, Number(peopleInput.value) || 0); syncAndSave(); computeAndRender(); });
+    const rentInput = document.createElement('input'); rentInput.type='number'; rentInput.min=0; rentInput.value = u.rent || 0; rentInput.style.width='100px';
+    rentInput.placeholder = 'Arriendo';
+    rentInput.addEventListener('change', ()=>{ u.rent = Math.max(0, Number(rentInput.value) || 0); syncAndSave(); computeAndRender(); });
     const removeBtn = document.createElement('button'); removeBtn.className='small-btn'; removeBtn.textContent='Eliminar';
-    removeBtn.addEventListener('click', ()=>{ state.units.splice(idx,1); syncAndSave(); renderUnits(); renderExtrasEditor(); computeAndRender(); });
+    removeBtn.addEventListener('click', ()=>{
+      if(!confirm(`¿Eliminar la unidad ${u.id}? Esta acción quitará también sus extras.`)) return;
+      state.units.splice(idx,1);
+      // also remove extras assigned to this unit
+      state.extras = state.extras.filter(e => e.unitId !== u.id);
+      syncAndSave(); renderUnits(); renderExtrasEditor(); computeAndRender();
+    });
     row.appendChild(nameInput);
     row.appendChild(peopleInput);
+    row.appendChild(rentInput);
     row.appendChild(removeBtn);
     container.appendChild(row);
   });
   // populate extra-unit-select
   renderExtrasEditor();
+  // populate summary select
+  const s = $i('unit-summary-select'); if(s){ s.innerHTML = ''; state.units.forEach(u=>{ const opt=document.createElement('option'); opt.value=u.id; opt.textContent=u.id; s.appendChild(opt); }); }
 }
 
 function renderExtrasEditor(){
@@ -69,9 +92,13 @@ function renderExtrasEditor(){
   const list = $i('extras-list'); list.innerHTML = '';
   state.extras.forEach((ex, idx)=>{
     const row = document.createElement('div'); row.className='extra-row';
-    const text = document.createElement('div'); text.style.flex='1'; text.innerHTML = `<strong>${ex.name}</strong> — ${formatMoney(ex.amount)} — ${ex.type}${ex.type==='per-unit' ? ' → '+ex.unitId : ''}`;
+    const text = document.createElement('div'); text.style.flex='1'; text.innerHTML = `<strong>${ex.name}</strong> — ${formatMoney(ex.amount)} — → ${ex.unitId}`;
     const del = document.createElement('button'); del.className='small-btn'; del.textContent='Eliminar';
-    del.addEventListener('click', ()=>{ state.extras.splice(idx,1); syncAndSave(); renderExtrasEditor(); computeAndRender(); });
+    del.addEventListener('click', ()=>{
+      if(!confirm(`¿Eliminar el extra "${ex.name}" (${formatMoney(ex.amount)}) de la unidad ${ex.unitId}?`)) return;
+      state.extras.splice(idx,1);
+      syncAndSave(); renderExtrasEditor(); computeAndRender();
+    });
     row.appendChild(text); row.appendChild(del);
     list.appendChild(row);
   });
@@ -83,10 +110,12 @@ function bindInputs(){
   $i('add-unit').addEventListener('click', ()=>{
     const name = $i('new-unit-name').value.trim();
     const people = Math.max(0, Number($i('new-unit-people').value) || 0);
+    const rent = Math.max(0, Number($i('new-unit-rent').value) || 0);
     if(!name) return alert('Ingresa nombre de unidad');
-    state.units.push({ id: name, people });
+    state.units.push({ id: name, people, rent });
     $i('new-unit-name').value='';
     $i('new-unit-people').value='1';
+    $i('new-unit-rent').value='0';
     syncAndSave(); renderUnits(); computeAndRender();
   });
 
@@ -110,14 +139,15 @@ function bindInputs(){
   $i('gas-201-202-price').addEventListener('input', e=>{ state.gas.price201_202 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('gas-401-402-price').addEventListener('input', e=>{ state.gas.price401_402 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
 
-  // Extras add
+  // Extras add (per unit)
   $i('add-extra').addEventListener('click', ()=>{
     const name = $i('extra-name').value.trim(); const amount = Number($i('extra-amount').value) || 0;
-    const type = $i('extra-type').value; const unitId = $i('extra-unit-select').value;
+    const unitId = $i('extra-unit-select').value;
     if(!name) return alert('Nombre del extra requerido');
+    if(!unitId) return alert('Selecciona una unidad para asignar el extra');
     const id = Date.now().toString(36);
-    state.extras.push({ id, name, amount, type, unitId: unitId });
-    $i('extra-name').value=''; $i('extra-amount').value=''; $i('extra-type').value='equal';
+    state.extras.push({ id, name, amount, unitId });
+    $i('extra-name').value=''; $i('extra-amount').value='';
     syncAndSave(); renderExtrasEditor(); computeAndRender();
   });
 
@@ -157,6 +187,12 @@ function bindInputs(){
     };
     reader.readAsText(f);
   });
+
+  // Summary controls listeners (if present)
+  const sel = $i('unit-summary-select'); if(sel) sel.addEventListener('change', renderUnitSummary);
+  ['include-electricity','include-water','include-gas','include-extras','include-rent'].forEach(id=>{
+    const el = $i(id); if(el) el.addEventListener('change', renderUnitSummary);
+  });
 }
 
 // ---------- COMPUTATION ----------
@@ -176,9 +212,9 @@ function bindInputs(){
 // Extras: can be equal-share among all units or assigned to a specific unit.
 
 function computeAllocations(){
-  const units = state.units.map(u => ({ id: u.id, people: Number(u.people)||0 }));
+  const units = state.units.map(u => ({ id: u.id, people: Number(u.people)||0, rent: Number(u.rent)||0 }));
   // Initialize results map
-  const results = {}; units.forEach(u => results[u.id] = { electricity: 0, water: 0, gas: 0, extras: 0, breakdown: {} });
+  const results = {}; units.forEach(u => results[u.id] = { electricity: 0, water: 0, gas: 0, extras: 0, rent: Number(u.rent)||0, breakdown: {} });
 
   // --- ELECTRICITY A ---
   const ea = state.ea;
@@ -243,13 +279,16 @@ function computeAllocations(){
     results[id].gas += people * gasB_perHead;
   });
 
-  // --- EXTRAS ---
+  // --- EXTRAS (todos asignados por unidad) ---
   state.extras.forEach(ex=>{
-    if(ex.type === 'equal'){
-      const perUnit = (Number(ex.amount) || 0) / Math.max(1, units.length);
-      units.forEach(u => results[u.id].extras += perUnit);
-    } else if(ex.type === 'per-unit'){
-      if(results[ex.unitId]) results[ex.unitId].extras += Number(ex.amount) || 0;
+    if(results[ex.unitId]){
+      const amt = Number(ex.amount) || 0;
+      results[ex.unitId].extras += amt;
+      // ensure breakdown extrasList and extrasMap exist
+      results[ex.unitId].breakdown.extrasList = results[ex.unitId].breakdown.extrasList || [];
+      results[ex.unitId].breakdown.extrasList.push({ id: ex.id, name: ex.name, amount: amt });
+      results[ex.unitId].breakdown.extrasMap = results[ex.unitId].breakdown.extrasMap || {};
+      results[ex.unitId].breakdown.extrasMap[ex.name] = (results[ex.unitId].breakdown.extrasMap[ex.name] || 0) + amt;
     }
   });
 
@@ -260,10 +299,77 @@ function computeAllocations(){
     r.water = Number((r.water||0).toFixed(2));
     r.gas = Number((r.gas||0).toFixed(2));
     r.extras = Number((r.extras||0).toFixed(2));
-    r.total = Number((r.electricity + r.water + r.gas + r.extras).toFixed(2));
+    r.rent = Number((r.rent||0).toFixed(2));
+    r.total = Number((r.electricity + r.water + r.gas + r.extras + r.rent).toFixed(2));
   });
 
   return { results, debug: { ea_pricePerKwh, eb_pricePerKwh, consumption202, consumption201, consumption401, consumption500, consumption402, pricePerHead, gasA_perHead, gasB_perHead } };
+}
+
+// Compute a per-unit summary with optional includes
+function computeUnitSummary(unitId, includes){
+  const { results } = computeAllocations();
+  const r = results[unitId];
+  if(!r) return null;
+  const breakdown = {};
+  breakdown.electricity = includes.electricity ? r.electricity : 0;
+  breakdown.water = includes.water ? r.water : 0;
+  breakdown.gas = includes.gas ? r.gas : 0;
+  // include detailed extras list when requested
+  breakdown.extrasList = includes.extras ? (r.breakdown.extrasList || []) : [];
+  breakdown.extras = breakdown.extrasList.reduce((s,it)=>s + (Number(it.amount)||0), 0);
+  breakdown.rent = includes.rent ? r.rent : 0;
+  breakdown.total = Number((breakdown.electricity + breakdown.water + breakdown.gas + breakdown.extras + breakdown.rent).toFixed(2));
+  return breakdown;
+}
+
+function renderUnitSummary(){
+  const sel = $i('unit-summary-select'); if(!sel) return;
+  const unitId = sel.value || (state.units[0] && state.units[0].id);
+  const includes = {
+    electricity: !!$i('include-electricity')?.checked,
+    water: !!$i('include-water')?.checked,
+    gas: !!$i('include-gas')?.checked,
+    extras: !!$i('include-extras')?.checked,
+    rent: !!$i('include-rent')?.checked
+  };
+  const s = computeUnitSummary(unitId, includes);
+  const card = $i('unit-summary-card');
+  if(!s){ card.innerHTML = '<p>Selecciona una unidad válida.</p>'; return; }
+  // Render summary as a neat table with rows per concept and per-extra rows
+  let rows = '';
+  if(includes.electricity) rows += `<tr><td>Luz</td><td style="text-align:right">$ ${formatMoney(s.electricity)}</td></tr>`;
+  if(includes.water) rows += `<tr><td>Agua</td><td style="text-align:right">$ ${formatMoney(s.water)}</td></tr>`;
+  if(includes.gas) rows += `<tr><td>Gas</td><td style="text-align:right">$ ${formatMoney(s.gas)}</td></tr>`;
+  if(includes.extras){
+    if(s.extrasList && s.extrasList.length){
+      s.extrasList.forEach(ex => {
+        rows += `<tr class="extra-row-item"><td style="text-align:left">${ex.name}</td><td style="text-align:right">$ ${formatMoney(ex.amount)} <button class="small-btn extra-remove" data-extra-id="${ex.id}" style="margin-left:.5rem">Quitar</button></td></tr>`;
+      });
+    } else {
+      rows += `<tr><td>Extras</td><td style="text-align:right">$ ${formatMoney(0)}</td></tr>`;
+    }
+  }
+  if(includes.rent) rows += `<tr><td>Arriendo</td><td style="text-align:right">$ ${formatMoney(s.rent)}</td></tr>`;
+  rows += `<tr class="summary-total"><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700">$ ${formatMoney(s.total)}</td></tr>`;
+
+  card.innerHTML = `<div class="summary-panel"><div style="margin-bottom:.5rem"><strong>${unitId}</strong><div style="color:var(--muted);font-size:.9rem">Detalle del pago</div></div><table class="summary-table"><tbody>${rows}</tbody></table></div>`;
+
+  // attach remove listeners for extras inside the card (with confirmation)
+  const remBtns = card.querySelectorAll('.extra-remove');
+  remBtns.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const eid = btn.getAttribute('data-extra-id');
+      const ex = state.extras.find(e=>e.id===eid);
+      if(!ex) return;
+      if(!confirm(`¿Eliminar el extra "${ex.name}" (${formatMoney(ex.amount)}) de la unidad ${ex.unitId}?`)) return;
+      state.extras = state.extras.filter(e => e.id !== eid);
+      syncAndSave();
+      renderExtrasEditor();
+      computeAndRender();
+      renderUnitSummary();
+    });
+  });
 }
 
 function findUnitIdLike(units, pattern){
@@ -283,11 +389,23 @@ function computeAndRender(){
   if(ids.length === 0){
     resultsDiv.innerHTML = '<p>No hay unidades registradas.</p>'; return;
   }
-  // table
-  let html = `<table class="results-table"><thead><tr><th>Unidad</th><th>Luz</th><th>Agua</th><th>Gas</th><th>Extras</th><th>Total</th></tr></thead><tbody>`;
+  // Build list of unique extra names (preserve order)
+  const extraNames = [];
+  state.extras.forEach(ex=>{ if(!extraNames.includes(ex.name)) extraNames.push(ex.name); });
+
+  // table header (dynamic extras columns)
+  let html = `<table class="results-table"><thead><tr><th>Unidad</th><th>Luz</th><th>Agua</th><th>Gas</th>`;
+  extraNames.forEach(n => { html += `<th style="min-width:120px">${n}</th>`; });
+  html += `<th>Arriendo</th><th>Total</th></tr></thead><tbody>`;
+
   ids.forEach(id=>{
     const r = results[id];
-    html += `<tr><td style="text-align:left">${id}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td><td>$ ${formatMoney(r.extras)}</td><td><strong>$ ${formatMoney(r.total)}</strong></td></tr>`;
+    html += `<tr><td style="text-align:left">${id}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td>`;
+    extraNames.forEach(n => {
+      const v = (r.breakdown.extrasMap && r.breakdown.extrasMap[n]) ? formatMoney(r.breakdown.extrasMap[n]) : '';
+      html += `<td>${v ? '$ ' + v : ''}</td>`;
+    });
+    html += `<td>$ ${formatMoney(r.rent)}</td><td><strong>$ ${formatMoney(r.total)}</strong></td></tr>`;
   });
   html += `</tbody></table>`;
 
@@ -335,6 +453,8 @@ function initializeUIFromState(){
 
   // extras editor
   renderExtrasEditor();
+  // render summary controls initially
+  renderUnitSummary();
 }
 
 function syncAndSave(){
