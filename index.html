@@ -33,6 +33,7 @@
         <button id="add-unit">Agregar unidad</button>
       </div>
 
+
     </section>
 
     <section class="panel">
@@ -46,8 +47,9 @@
         <label>Lectura anterior 202: <input id="ea-prev-202" type="number" min="0" step="0.01"></label><br>
         <label>Lectura actual 202: <input id="ea-curr-202" type="number" min="0" step="0.01"></label><br>
 
-      </div>
+        <label>Aseo (recibo A): <input id="ea-aseo" type="number" min="0" step="0.01" placeholder="Monto aseo"></label><br>
 
+      </div>
       <h2>Electricidad B (401, 500 y 402)</h2>
 
       <div class="grid">
@@ -58,6 +60,7 @@
         <label>Lectura actual 401: <input id="eb-curr-401" type="number" min="0" step="0.01"></label><br>
         <label>Lectura anterior 500: <input id="eb-prev-500" type="number" min="0" step="0.01"></label><br>
         <label>Lectura actual 500: <input id="eb-curr-500" type="number" min="0" step="0.01"></label><br>
+        <label>Aseo (recibo B): <input id="eb-aseo" type="number" min="0" step="0.01" placeholder="Monto aseo"></label><br>
 
       </div>
 
@@ -114,16 +117,23 @@
         <label>Seleccionar unidad:
           <select id="unit-summary-select"></select>
         </label>
+        <label>Mes facturado:
+          <select id="summary-month-select"></select>
+        </label>
+        <label><input type="checkbox" id="include-aseo" checked> Aseo</label>
         <label><input type="checkbox" id="include-electricity" checked> Luz</label>
         <label><input type="checkbox" id="include-water" checked> Agua</label>
         <label><input type="checkbox" id="include-gas" checked> Gas</label>
         <label><input type="checkbox" id="include-extras" checked> Extras</label>
         <label><input type="checkbox" id="include-rent" checked> Arriendo</label>
+        <button id="generate-receipt-img" class="small-btn">Generar imagen (PNG)</button>
       </div>
 
       <div id="unit-summary-card" class="panel"></div>
 
-      <div id="results"></div>
+      <div id="results" class="results-wrapper"></div>
+
+      
 
       <div class="actions">
         <button id="reset-all">Borrar todos los datos guardados</button>
@@ -140,6 +150,7 @@
 
   </main>
 
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
   <script src="app.js"></script>
 
 </body>
