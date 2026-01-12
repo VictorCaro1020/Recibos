@@ -9,12 +9,9 @@ function save(data){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 function load(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null } catch(e){ return null } }
 function formatMoney(v){
   const n = Number(v || 0);
-  // round to 2 decimals, then trim trailing zeros
   const fixed = n.toFixed(2);
   const [intPart, decPart] = fixed.split('.');
-  // thousands separator: dot
   const intWithDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  // remove trailing zeros in decimal part
   const decTrimmed = decPart.replace(/0+$/,'');
   if(decTrimmed === '') return intWithDots;
   return `${intWithDots},${decTrimmed}`;
@@ -35,6 +32,9 @@ const defaultData = {
   ea: { totalKwh: 0, totalPrice: 0, prev202: 0, curr202: 0 },
   // Electricity receipt B (401,500 and 402 computed)
   eb: { totalKwh: 0, totalPrice: 0, prev401: 0, curr401: 0, prev500: 0, curr500: 0 },
+  // Aseo (aseo amount per receipt)
+  ea_aseo: 0,
+  eb_aseo: 0,
   // Water
   water: { totalPrice: 0 },
   // Gas
@@ -124,6 +124,7 @@ function bindInputs(){
   $i('ea-total-price').addEventListener('input', e=>{ state.ea.totalPrice = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('ea-prev-202').addEventListener('input', e=>{ state.ea.prev202 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('ea-curr-202').addEventListener('input', e=>{ state.ea.curr202 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
+  const eaAseo = $i('ea-aseo'); if(eaAseo) eaAseo.addEventListener('input', e=>{ state.ea_aseo = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   // Electricity EB
   $i('eb-total-kwh').addEventListener('input', e=>{ state.eb.totalKwh = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('eb-total-price').addEventListener('input', e=>{ state.eb.totalPrice = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
@@ -131,6 +132,7 @@ function bindInputs(){
   $i('eb-curr-401').addEventListener('input', e=>{ state.eb.curr401 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('eb-prev-500').addEventListener('input', e=>{ state.eb.prev500 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
   $i('eb-curr-500').addEventListener('input', e=>{ state.eb.curr500 = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
+  const ebAseo = $i('eb-aseo'); if(ebAseo) ebAseo.addEventListener('input', e=>{ state.eb_aseo = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
 
   // Water
   $i('water-total-price').addEventListener('input', e=>{ state.water.totalPrice = Number(e.target.value)||0; syncAndSave(); computeAndRender(); });
@@ -193,6 +195,23 @@ function bindInputs(){
   ['include-electricity','include-water','include-gas','include-extras','include-rent'].forEach(id=>{
     const el = $i(id); if(el) el.addEventListener('change', renderUnitSummary);
   });
+  const elAseo = $i('include-aseo'); if(elAseo) elAseo.addEventListener('change', renderUnitSummary);
+  const monthSel = $i('summary-month-select'); if(monthSel){ monthSel.addEventListener('change', renderUnitSummary); }
+  // PDF/print receipt removed; image-only generation handled below
+  const genImgBtn = $i('generate-receipt-img'); if(genImgBtn) genImgBtn.addEventListener('click', ()=>{
+    const selUnit = $i('unit-summary-select'); if(!selUnit) return alert('Selecciona la unidad primero');
+    const unitId = selUnit.value;
+    const includes = {
+      electricity: !!$i('include-electricity')?.checked,
+      water: !!$i('include-water')?.checked,
+      gas: !!$i('include-gas')?.checked,
+      extras: !!$i('include-extras')?.checked,
+      rent: !!$i('include-rent')?.checked,
+      aseo: !!$i('include-aseo')?.checked
+    };
+    const month = $i('summary-month-select')?.value || '';
+    generateReceiptImage(unitId, includes, month);
+  });
 }
 
 // ---------- COMPUTATION ----------
@@ -214,7 +233,7 @@ function bindInputs(){
 function computeAllocations(){
   const units = state.units.map(u => ({ id: u.id, people: Number(u.people)||0, rent: Number(u.rent)||0 }));
   // Initialize results map
-  const results = {}; units.forEach(u => results[u.id] = { electricity: 0, water: 0, gas: 0, extras: 0, rent: Number(u.rent)||0, breakdown: {} });
+  const results = {}; units.forEach(u => results[u.id] = { electricity: 0, water: 0, gas: 0, extras: 0, aseo: 0, rent: Number(u.rent)||0, breakdown: {} });
 
   // --- ELECTRICITY A ---
   const ea = state.ea;
@@ -292,6 +311,25 @@ function computeAllocations(){
     }
   });
 
+  // --- ASEO ---
+  // Recibo A -> units 201 & 202
+  const eaAseo = Number(state.ea_aseo) || 0;
+  const eaUnitIds = ['201','202'].map(x=> findUnitIdLike(units,x)).filter(Boolean);
+  const eaOccupied = eaUnitIds.filter(id => (units.find(u=>u.id===id).people || 0) > 0);
+  if(eaAseo > 0 && eaOccupied.length > 0){
+    const per = eaAseo / eaOccupied.length;
+    eaOccupied.forEach(id => { results[id].aseo += per; results[id].breakdown.aseo = (results[id].breakdown.aseo||0) + per; });
+  }
+
+  // Recibo B -> units 401,402,500
+  const ebAseo = Number(state.eb_aseo) || 0;
+  const ebUnitIds = ['401','402','500'].map(x=> findUnitIdLike(units,x)).filter(Boolean);
+  const ebOccupied = ebUnitIds.filter(id => (units.find(u=>u.id===id).people || 0) > 0);
+  if(ebAseo > 0 && ebOccupied.length > 0){
+    const per = ebAseo / ebOccupied.length;
+    ebOccupied.forEach(id => { results[id].aseo += per; results[id].breakdown.aseo = (results[id].breakdown.aseo||0) + per; });
+  }
+
   // rounding and totals
   units.forEach(u=>{
     const r = results[u.id];
@@ -299,8 +337,9 @@ function computeAllocations(){
     r.water = Number((r.water||0).toFixed(2));
     r.gas = Number((r.gas||0).toFixed(2));
     r.extras = Number((r.extras||0).toFixed(2));
+    r.aseo = Number((r.aseo||0).toFixed(2));
     r.rent = Number((r.rent||0).toFixed(2));
-    r.total = Number((r.electricity + r.water + r.gas + r.extras + r.rent).toFixed(2));
+    r.total = Number((r.electricity + r.water + r.gas + r.extras + r.aseo + r.rent).toFixed(2));
   });
 
   return { results, debug: { ea_pricePerKwh, eb_pricePerKwh, consumption202, consumption201, consumption401, consumption500, consumption402, pricePerHead, gasA_perHead, gasB_perHead } };
@@ -318,8 +357,9 @@ function computeUnitSummary(unitId, includes){
   // include detailed extras list when requested
   breakdown.extrasList = includes.extras ? (r.breakdown.extrasList || []) : [];
   breakdown.extras = breakdown.extrasList.reduce((s,it)=>s + (Number(it.amount)||0), 0);
+  breakdown.aseo = includes.aseo ? (Number(r.aseo)||0) : 0;
   breakdown.rent = includes.rent ? r.rent : 0;
-  breakdown.total = Number((breakdown.electricity + breakdown.water + breakdown.gas + breakdown.extras + breakdown.rent).toFixed(2));
+  breakdown.total = Number((breakdown.electricity + breakdown.water + breakdown.gas + breakdown.extras + breakdown.aseo + breakdown.rent).toFixed(2));
   return breakdown;
 }
 
@@ -331,16 +371,21 @@ function renderUnitSummary(){
     water: !!$i('include-water')?.checked,
     gas: !!$i('include-gas')?.checked,
     extras: !!$i('include-extras')?.checked,
-    rent: !!$i('include-rent')?.checked
+    rent: !!$i('include-rent')?.checked,
+    aseo: !!$i('include-aseo')?.checked
   };
   const s = computeUnitSummary(unitId, includes);
   const card = $i('unit-summary-card');
   if(!s){ card.innerHTML = '<p>Selecciona una unidad válida.</p>'; return; }
-  // Render summary as a neat table with rows per concept and per-extra rows
+  // Render summary as a neat table with rows per concept and per-extra rows (Arriendo first)
+  const month = $i('summary-month-select')?.value || '';
+  const generatedAt = new Date();
   let rows = '';
+  if(includes.rent) rows += `<tr><td>Arriendo</td><td style="text-align:right">$ ${formatMoney(s.rent)}</td></tr>`;
   if(includes.electricity) rows += `<tr><td>Luz</td><td style="text-align:right">$ ${formatMoney(s.electricity)}</td></tr>`;
   if(includes.water) rows += `<tr><td>Agua</td><td style="text-align:right">$ ${formatMoney(s.water)}</td></tr>`;
   if(includes.gas) rows += `<tr><td>Gas</td><td style="text-align:right">$ ${formatMoney(s.gas)}</td></tr>`;
+  if(includes.aseo) rows += `<tr><td>Aseo</td><td style="text-align:right">$ ${formatMoney(s.aseo)}</td></tr>`;
   if(includes.extras){
     if(s.extrasList && s.extrasList.length){
       s.extrasList.forEach(ex => {
@@ -350,10 +395,9 @@ function renderUnitSummary(){
       rows += `<tr><td>Extras</td><td style="text-align:right">$ ${formatMoney(0)}</td></tr>`;
     }
   }
-  if(includes.rent) rows += `<tr><td>Arriendo</td><td style="text-align:right">$ ${formatMoney(s.rent)}</td></tr>`;
   rows += `<tr class="summary-total"><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700">$ ${formatMoney(s.total)}</td></tr>`;
 
-  card.innerHTML = `<div class="summary-panel"><div style="margin-bottom:.5rem"><strong>${unitId}</strong><div style="color:var(--muted);font-size:.9rem">Detalle del pago</div></div><table class="summary-table"><tbody>${rows}</tbody></table></div>`;
+  card.innerHTML = `<div class="summary-panel"><div style="margin-bottom:.5rem"><strong>${unitId}</strong><div style="color:var(--muted);font-size:.9rem">Mes: ${month} — Generado: ${generatedAt.toLocaleDateString()}</div></div><table class="summary-table"><tbody>${rows}</tbody></table></div>`;
 
   // attach remove listeners for extras inside the card (with confirmation)
   const remBtns = card.querySelectorAll('.extra-remove');
@@ -370,6 +414,59 @@ function renderUnitSummary(){
       renderUnitSummary();
     });
   });
+}
+
+// Generate a printable receipt for a unit (opens new window and prints)
+// PDF/print receipt removed per request.
+
+// Generate receipt as PNG image using html2canvas (requires html2canvas loaded)
+function generateReceiptImage(unitId, includes, month){
+  const breakdown = computeUnitSummary(unitId, { electricity: includes.electricity, water: includes.water, gas: includes.gas, extras: includes.extras, rent: includes.rent, aseo: includes.aseo });
+  if(!breakdown) return alert('Unidad no encontrada');
+  const unit = state.units.find(u=>u.id===unitId) || { people: 0 };
+  const dateStr = new Date().toLocaleDateString();
+  let extrasHtml = '';
+  if(breakdown.extrasList && breakdown.extrasList.length){
+    breakdown.extrasList.forEach(ex => { extrasHtml += `<tr><td>${ex.name}</td><td style="text-align:right">$ ${formatMoney(ex.amount)}</td></tr>`; });
+  }
+  const container = document.createElement('div');
+  container.style.padding = '20px';
+  container.style.background = '#fff';
+  container.style.color = '#0f172a';
+  container.style.fontFamily = 'Inter, Arial, Helvetica, sans-serif';
+  container.style.width = '520px';
+  container.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><h2 style=\"margin:0\">Recibo - Unidad ${unitId}</h2><div style=\"color:#6b7280;font-size:.9rem\">Mes: ${month || ''}</div></div><div>${dateStr}</div></div>
+    <div style=\"border:1px solid #e6edf3;padding:12px;border-radius:8px;margin-top:12px\">\n      <div>Personas: ${unit.people || 0}</div>\n      <table style=\"width:100%;border-collapse:collapse;margin-top:8px\">\n        <tbody>\n          ${includes.rent ? `<tr><td>Arriendo</td><td style=\"text-align:right\">$ ${formatMoney(breakdown.rent)}</td></tr>` : ''}\n          ${includes.electricity ? `<tr><td>Luz</td><td style=\"text-align:right\">$ ${formatMoney(breakdown.electricity)}</td></tr>` : ''}\n          ${includes.water ? `<tr><td>Agua</td><td style=\"text-align:right\">$ ${formatMoney(breakdown.water)}</td></tr>` : ''}\n          ${includes.gas ? `<tr><td>Gas</td><td style=\"text-align:right\">$ ${formatMoney(breakdown.gas)}</td></tr>` : ''}\n          ${includes.aseo ? `<tr><td>Aseo</td><td style=\"text-align:right\">$ ${formatMoney(breakdown.aseo)}</td></tr>` : ''}\n          ${extrasHtml}\n          <tr><td style=\"font-weight:700\">Total</td><td style=\"text-align:right;font-weight:700\">$ ${formatMoney(breakdown.total)}</td></tr>\n        </tbody>\n      </table>\n    </div>`;
+
+  // Render image and embed into the unit summary card
+  const card = $i('unit-summary-card');
+  if(!card){ alert('Detalle de pago no disponible para mostrar la imagen.'); container.remove(); return; }
+  const targetWrapper = card.querySelector('.receipt-image-wrapper') || document.createElement('div');
+  targetWrapper.className = 'receipt-image-wrapper';
+  // clear previous image
+  targetWrapper.innerHTML = '<div style="color:var(--muted);font-size:.9rem">Generando imagen...</div>';
+  card.appendChild(targetWrapper);
+  if(typeof html2canvas === 'undefined'){
+    targetWrapper.innerHTML = '<div style="color:var(--danger)">La librería html2canvas no está cargada.</div>';
+    container.remove();
+    return;
+  }
+  // append container off-screen so html2canvas can render it
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.top = '-9999px';
+  document.body.appendChild(container);
+  html2canvas(container, { scale:2, backgroundColor: '#ffffff' }).then(canvas => {
+    const data = canvas.toDataURL('image/png');
+    // auto-download the image (no preview)
+    try{
+      const autoA = document.createElement('a'); autoA.href = data; autoA.download = `recibo_${unitId}.png`;
+      document.body.appendChild(autoA); autoA.click(); autoA.remove();
+    }catch(e){ /* ignore download errors */ }
+    // clear any previous wrapper content
+    if(targetWrapper && targetWrapper.parentNode) targetWrapper.parentNode.removeChild(targetWrapper);
+    container.remove();
+  }).catch(err => { container.remove(); if(targetWrapper) targetWrapper.innerHTML = '<div style="color:var(--danger)">Error al generar imagen.</div>'; });
 }
 
 function findUnitIdLike(units, pattern){
@@ -394,18 +491,18 @@ function computeAndRender(){
   state.extras.forEach(ex=>{ if(!extraNames.includes(ex.name)) extraNames.push(ex.name); });
 
   // table header (dynamic extras columns)
-  let html = `<table class="results-table"><thead><tr><th>Unidad</th><th>Luz</th><th>Agua</th><th>Gas</th>`;
+  let html = `<table class="results-table"><thead><tr><th>Unidad</th><th>Arriendo</th><th>Luz</th><th>Agua</th><th>Gas</th><th>Aseo</th>`;
   extraNames.forEach(n => { html += `<th style="min-width:120px">${n}</th>`; });
-  html += `<th>Arriendo</th><th>Total</th></tr></thead><tbody>`;
+  html += `<th>Total</th></tr></thead><tbody>`;
 
   ids.forEach(id=>{
     const r = results[id];
-    html += `<tr><td style="text-align:left">${id}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td>`;
+    html += `<tr><td style="text-align:left">${id}</td><td>$ ${formatMoney(r.rent)}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td><td>$ ${formatMoney(r.aseo)}</td>`;
     extraNames.forEach(n => {
       const v = (r.breakdown.extrasMap && r.breakdown.extrasMap[n]) ? formatMoney(r.breakdown.extrasMap[n]) : '';
       html += `<td>${v ? '$ ' + v : ''}</td>`;
     });
-    html += `<td>$ ${formatMoney(r.rent)}</td><td><strong>$ ${formatMoney(r.total)}</strong></td></tr>`;
+    html += `<td><strong>$ ${formatMoney(r.total)}</strong></td></tr>`;
   });
   html += `</tbody></table>`;
 
@@ -435,6 +532,7 @@ function initializeUIFromState(){
   $i('ea-total-price').value = state.ea.totalPrice || 0;
   $i('ea-prev-202').value = state.ea.prev202 || 0;
   $i('ea-curr-202').value = state.ea.curr202 || 0;
+  $i('ea-aseo').value = state.ea_aseo || 0;
 
   // EB
   $i('eb-total-kwh').value = state.eb.totalKwh || 0;
@@ -443,6 +541,7 @@ function initializeUIFromState(){
   $i('eb-curr-401').value = state.eb.curr401 || 0;
   $i('eb-prev-500').value = state.eb.prev500 || 0;
   $i('eb-curr-500').value = state.eb.curr500 || 0;
+  $i('eb-aseo').value = state.eb_aseo || 0;
 
   // Water
   $i('water-total-price').value = state.water.totalPrice || 0;
@@ -453,6 +552,9 @@ function initializeUIFromState(){
 
   // extras editor
   renderExtrasEditor();
+  // populate months select
+  const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const msel = $i('summary-month-select'); if(msel){ msel.innerHTML=''; const now=new Date(); months.forEach((m,i)=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; if(i===now.getMonth()) o.selected=true; msel.appendChild(o); }); }
   // render summary controls initially
   renderUnitSummary();
 }
