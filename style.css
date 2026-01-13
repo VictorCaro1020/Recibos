@@ -187,11 +187,11 @@ font-size:0.9rem
 
 .units-wrapper {
   overflow-x: auto;
-  max-width: 99%;
+  max-width: 100%;
 }
 
 #units-list {
   width: max-content;   /* se adapta al contenido real */
-  min-width: 100%;      /* ocupa al menos el ancho del contenedor */
+  min-width: 99%;      /* ocupa al menos el ancho del contenedor */
 }
 
