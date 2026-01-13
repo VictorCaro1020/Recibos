@@ -184,3 +184,8 @@ font-size:0.9rem
 @media (max-width:600px){
 .grid{grid-template-columns:1fr}
 }
+
+/* Wrapper para permitir scroll horizontal en unidades */ 
+.units-wrapper { overflow: auto; /* activa el scroll lateral si el contenido se desborda */ 
+max-width: 100%; /* que nunca se salga del ancho del contenedor */ } /* Forzar ancho mínimo para que aparezca scroll si hay muchas columnas */ #units-list { 
+min-width: 760px; /* igual que la tabla de resultados, ajusta según tus campos */ }
