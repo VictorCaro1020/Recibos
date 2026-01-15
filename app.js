@@ -511,11 +511,11 @@ function computeAndRender(){
   <pre style="white-space:pre-wrap">Precio kWh (recibo A): ${formatMoney(debug.ea_pricePerKwh)}
 Precio kWh (recibo B): ${formatMoney(debug.eb_pricePerKwh)}
 Consumo 202: ${formatMoney(debug.consumption202)} kWh
-Consumo 201 (estimado por diferencia): ${formatMoney(debug.consumption201)} kWh
+Consumo 201: ${formatMoney(debug.consumption201)} kWh
 Consumo 401: ${formatMoney(debug.consumption401)} kWh
 Consumo 500: ${formatMoney(debug.consumption500)} kWh
-Consumo 402 (estimado por diferencia): ${formatMoney(debug.consumption402)} kWh
-Precio agua por cabeza: ${formatMoney(debug.pricePerHead)}
+Consumo 402: ${formatMoney(debug.consumption402)} kWh
+Precio: ${formatMoney(debug.pricePerHead)}
 Precio gas (201+202) por cabeza: ${formatMoney(debug.gasA_perHead)}
 Precio gas (401+402) por cabeza: ${formatMoney(debug.gasB_perHead)}</pre></details>`;
 
