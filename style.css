@@ -68,10 +68,7 @@ border:1px solid #e6edf3;
 background:#fff
 }
 
-input[
-type="number"
-]
-{
+input[type="number"]{
 width:100%
 }
 
@@ -82,10 +79,7 @@ border:none;
 cursor:pointer
 }
 
-button[
-disabled
-]
-{
+button[disabled]{
 opacity:.6;
 cursor:not-allowed
 }
@@ -111,16 +105,11 @@ margin-bottom:.3rem
 margin:0
 }
 
-.unit-row input[
-type="text"]
-{
+.unit-row input[type="text"]{
 width:120px
 }
 
-.unit-row input[
-type="number"
-]
-{
+.unit-row input[type="number"]{
 width:70px
 }
 
@@ -144,8 +133,9 @@ margin-top:.5rem
 
 .results-table th, .results-table td{
 border:1px solid #e6edf3;
-padding:.45rem;
-text-align:right
+padding:.35rem .5rem;
+text-align:right;
+font-size:0.9rem
 }
 
 .results-table th{
@@ -195,3 +185,54 @@ font-size:0.9rem
   min-width: 100%;      /* ocupa al menos el ancho del contenedor */
 }
 
+/* Nuevos estilos para edición manual */
+#manual-edit-section summary:hover {
+  color: #1e40af;
+}
+
+#manual-edit-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.manual-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.manual-field label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.manual-field input {
+  width: 100%;
+  padding: 0.4rem;
+  border: 2px solid #e6edf3;
+  border-radius: 6px;
+  background: white;
+}
+
+.manual-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.manual-mode-active {
+  background: #fef3c7 !important;
+  border: 2px solid #f59e0b;
+}
+
+.manual-mode-indicator {
+  display: inline-block;
+  background: #f59e0b;
+  color: white;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+}
