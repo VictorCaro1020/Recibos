@@ -136,7 +136,29 @@
 
       <div id="results" class="results-wrapper"></div>
 
-      
+      <!-- NUEVA SECCIÓN: Modificar datos manualmente -->
+      <details id="manual-edit-section" style="margin-top: 1.5rem;">
+        <summary style="cursor: pointer; font-weight: 600; color: var(--accent); padding: 0.5rem;">
+          Modificar datos manualmente (emergencia)
+        </summary>
+        <div id="manual-edit-content" class="panel" style="margin-top: 0.5rem; background: #f8fafc;">
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Usa esta opción solo en caso de emergencia cuando necesites ajustar valores calculados. 
+            Los cambios sobrescribirán los cálculos automáticos.
+          </p>
+          
+          <div class="inline" style="margin-bottom: 1rem;">
+            <label>Seleccionar unidad para editar:
+              <select id="manual-edit-unit-select"></select>
+            </label>
+            <button id="reset-manual-mode" class="small-btn" style="background: var(--danger); color: white;">
+              Restablecer a modo automático
+            </button>
+          </div>
+
+          <div id="manual-edit-fields"></div>
+        </div>
+      </details>
 
       <div class="actions">
         <button id="reset-all">Borrar todos los datos guardados</button>
