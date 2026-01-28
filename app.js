@@ -3,10 +3,13 @@
 
 // ---------- UTIL ----------
 const STORAGE_KEY = 'utilityCalcData_v1';
+const MANUAL_OVERRIDES_KEY = 'utilityCalcManualOverrides_v1';
 
 function $i(id){ return document.getElementById(id); }
 function save(data){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
 function load(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null } catch(e){ return null } }
+function saveManualOverrides(overrides){ localStorage.setItem(MANUAL_OVERRIDES_KEY, JSON.stringify(overrides)); }
+function loadManualOverrides(){ try { return JSON.parse(localStorage.getItem(MANUAL_OVERRIDES_KEY)) || {} } catch(e){ return {} } }
 function formatMoney(v){
   const n = Number(v || 0);
   const fixed = n.toFixed(2);
@@ -47,6 +50,7 @@ const defaultData = {
 
 // ---------- STATE ----------
 let state = load() || defaultData;
+let manualOverrides = loadManualOverrides();
 
 // ---------- DOM helpers ----------
 function renderUnits(){
@@ -67,6 +71,9 @@ function renderUnits(){
       state.units.splice(idx,1);
       // also remove extras assigned to this unit
       state.extras = state.extras.filter(e => e.unitId !== u.id);
+      // remove manual overrides for this unit
+      delete manualOverrides[u.id];
+      saveManualOverrides(manualOverrides);
       syncAndSave(); renderUnits(); renderExtrasEditor(); computeAndRender();
     });
     row.appendChild(nameInput);
@@ -79,6 +86,8 @@ function renderUnits(){
   renderExtrasEditor();
   // populate summary select
   const s = $i('unit-summary-select'); if(s){ s.innerHTML = ''; state.units.forEach(u=>{ const opt=document.createElement('option'); opt.value=u.id; opt.textContent=u.id; s.appendChild(opt); }); }
+  // populate manual edit select
+  const manualSel = $i('manual-edit-unit-select'); if(manualSel){ manualSel.innerHTML = ''; state.units.forEach(u=>{ const opt=document.createElement('option'); opt.value=u.id; opt.textContent=u.id; manualSel.appendChild(opt); }); }
 }
 
 function renderExtrasEditor(){
@@ -157,7 +166,9 @@ function bindInputs(){
   $i('reset-all').addEventListener('click', ()=>{
     if(!confirm('¿Borrar todos los datos guardados?')) return;
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(MANUAL_OVERRIDES_KEY);
     state = JSON.parse(JSON.stringify(defaultData));
+    manualOverrides = {};
     initializeUIFromState();
     syncAndSave();
     computeAndRender();
@@ -212,6 +223,27 @@ function bindInputs(){
     const month = $i('summary-month-select')?.value || '';
     generateReceiptImage(unitId, includes, month);
   });
+
+  // Manual edit listeners
+  const manualEditUnitSelect = $i('manual-edit-unit-select');
+  if(manualEditUnitSelect){
+    manualEditUnitSelect.addEventListener('change', renderManualEditFields);
+  }
+  
+  const resetManualBtn = $i('reset-manual-mode');
+  if(resetManualBtn){
+    resetManualBtn.addEventListener('click', ()=>{
+      if(!confirm('¿Restablecer todos los valores a modo automático? Esto eliminará todas las ediciones manuales.')){
+        return;
+      }
+      manualOverrides = {};
+      saveManualOverrides(manualOverrides);
+      renderManualEditFields();
+      computeAndRender();
+      renderUnitSummary();
+      alert('Modo automático restablecido. Todos los valores ahora se calculan automáticamente.');
+    });
+  }
 }
 
 // ---------- COMPUTATION ----------
@@ -321,14 +353,55 @@ function computeAllocations(){
     eaOccupied.forEach(id => { results[id].aseo += per; results[id].breakdown.aseo = (results[id].breakdown.aseo||0) + per; });
   }
 
-  // Recibo B -> units 401,402,500
+  // MODIFICACIÓN: Recibo B -> 500 siempre incluido, solo 401 y 402 se cuentan si están habitados
   const ebAseo = Number(state.eb_aseo) || 0;
-  const ebUnitIds = ['401','402','500'].map(x=> findUnitIdLike(units,x)).filter(Boolean);
-  const ebOccupied = ebUnitIds.filter(id => (units.find(u=>u.id===id).people || 0) > 0);
-  if(ebAseo > 0 && ebOccupied.length > 0){
-    const per = ebAseo / ebOccupied.length;
-    ebOccupied.forEach(id => { results[id].aseo += per; results[id].breakdown.aseo = (results[id].breakdown.aseo||0) + per; });
+  const u401 = units.find(u => u.id === (findUnitIdLike(units, '401') || ''));
+  const u402 = units.find(u => u.id === (findUnitIdLike(units, '402') || ''));
+  const u500 = units.find(u => u.id === (findUnitIdLike(units, '500') || ''));
+  
+  // Contar pisos para división de aseo: 500 siempre + 401 si habitado + 402 si habitado
+  let ebAseoCount = 0;
+  const ebAseoUnits = [];
+  
+  // 500 siempre se incluye (fijo)
+  if(u500){
+    ebAseoCount++;
+    ebAseoUnits.push(u500.id);
   }
+  
+  // 401 solo si está habitado (people > 0)
+  if(u401 && u401.people > 0){
+    ebAseoCount++;
+    ebAseoUnits.push(u401.id);
+  }
+  
+  // 402 solo si está habitado (people > 0)
+  if(u402 && u402.people > 0){
+    ebAseoCount++;
+    ebAseoUnits.push(u402.id);
+  }
+  
+  // Distribuir aseo entre las unidades contadas
+  if(ebAseo > 0 && ebAseoCount > 0){
+    const per = ebAseo / ebAseoCount;
+    ebAseoUnits.forEach(id => { 
+      results[id].aseo += per; 
+      results[id].breakdown.aseo = (results[id].breakdown.aseo||0) + per; 
+    });
+  }
+
+  // Apply manual overrides if they exist
+  units.forEach(u => {
+    if(manualOverrides[u.id]){
+      const overrides = manualOverrides[u.id];
+      if(overrides.electricity !== undefined) results[u.id].electricity = Number(overrides.electricity);
+      if(overrides.water !== undefined) results[u.id].water = Number(overrides.water);
+      if(overrides.gas !== undefined) results[u.id].gas = Number(overrides.gas);
+      if(overrides.aseo !== undefined) results[u.id].aseo = Number(overrides.aseo);
+      if(overrides.rent !== undefined) results[u.id].rent = Number(overrides.rent);
+      if(overrides.extras !== undefined) results[u.id].extras = Number(overrides.extras);
+    }
+  });
 
   // rounding and totals
   units.forEach(u=>{
@@ -377,6 +450,11 @@ function renderUnitSummary(){
   const s = computeUnitSummary(unitId, includes);
   const card = $i('unit-summary-card');
   if(!s){ card.innerHTML = '<p>Selecciona una unidad válida.</p>'; return; }
+  
+  // Check if unit has manual overrides
+  const hasManualOverrides = manualOverrides[unitId] !== undefined;
+  const manualIndicator = hasManualOverrides ? '<span class="manual-mode-indicator">MODO MANUAL</span>' : '';
+  
   // Render summary as a neat table with rows per concept and per-extra rows (Arriendo first)
   const month = $i('summary-month-select')?.value || '';
   const generatedAt = new Date();
@@ -397,7 +475,7 @@ function renderUnitSummary(){
   }
   rows += `<tr class="summary-total"><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700">$ ${formatMoney(s.total)}</td></tr>`;
 
-  card.innerHTML = `<div class="summary-panel"><div style="margin-bottom:.5rem"><strong>${unitId}</strong><div style="color:var(--muted);font-size:.9rem">Mes: ${month} — Generado: ${generatedAt.toLocaleDateString()}</div></div><table class="summary-table"><tbody>${rows}</tbody></table></div>`;
+  card.innerHTML = `<div class="summary-panel ${hasManualOverrides ? 'manual-mode-active' : ''}"><div style="margin-bottom:.5rem"><strong>${unitId}</strong> ${manualIndicator}<div style="color:var(--muted);font-size:.9rem">Mes: ${month} — Generado: ${generatedAt.toLocaleDateString()}</div></div><table class="summary-table"><tbody>${rows}</tbody></table></div>`;
 
   // attach remove listeners for extras inside the card (with confirmation)
   const remBtns = card.querySelectorAll('.extra-remove');
@@ -478,6 +556,93 @@ function findUnitIdLike(units, pattern){
   return incl ? incl.id : null;
 }
 
+// ---------- MANUAL EDIT FUNCTIONALITY ----------
+function renderManualEditFields(){
+  const container = $i('manual-edit-fields');
+  const select = $i('manual-edit-unit-select');
+  if(!container || !select) return;
+  
+  const unitId = select.value;
+  if(!unitId){
+    container.innerHTML = '<p style="color:var(--muted)">Selecciona una unidad para editar sus valores.</p>';
+    return;
+  }
+  
+  // Get current calculated values
+  const { results } = computeAllocations();
+  const r = results[unitId];
+  if(!r){
+    container.innerHTML = '<p style="color:var(--danger)">Unidad no encontrada.</p>';
+    return;
+  }
+  
+  // Check if this unit has manual overrides
+  const hasOverrides = manualOverrides[unitId] !== undefined;
+  const overrides = manualOverrides[unitId] || {};
+  
+  // Create editable fields for each value
+  const fields = [
+    { key: 'electricity', label: 'Luz', value: r.electricity },
+    { key: 'water', label: 'Agua', value: r.water },
+    { key: 'gas', label: 'Gas', value: r.gas },
+    { key: 'aseo', label: 'Aseo', value: r.aseo },
+    { key: 'rent', label: 'Arriendo', value: r.rent },
+    { key: 'extras', label: 'Extras', value: r.extras }
+  ];
+  
+  let html = hasOverrides ? '<p style="color:#f59e0b;font-weight:600;margin-bottom:1rem">⚠️ Esta unidad está en MODO MANUAL</p>' : '';
+  html += '<div id="manual-edit-fields-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.8rem;">';
+  
+  fields.forEach(field => {
+    const currentValue = overrides[field.key] !== undefined ? overrides[field.key] : field.value;
+    const isOverridden = overrides[field.key] !== undefined;
+    html += `
+      <div class="manual-field">
+        <label>${field.label} ${isOverridden ? '(editado)' : '(auto)'}</label>
+        <input 
+          type="number" 
+          step="0.01" 
+          value="${currentValue}" 
+          data-field="${field.key}"
+          data-unit="${unitId}"
+          style="${isOverridden ? 'border-color:#f59e0b;background:#fef3c7' : ''}"
+        />
+      </div>
+    `;
+  });
+  
+  html += '</div>';
+  container.innerHTML = html;
+  
+  // Attach event listeners to inputs
+  const inputs = container.querySelectorAll('input[data-field]');
+  inputs.forEach(input => {
+    input.addEventListener('change', (e) => {
+      const field = e.target.getAttribute('data-field');
+      const unit = e.target.getAttribute('data-unit');
+      const value = Number(e.target.value) || 0;
+      
+      // Initialize overrides object for this unit if it doesn't exist
+      if(!manualOverrides[unit]){
+        manualOverrides[unit] = {};
+      }
+      
+      // Set the override value
+      manualOverrides[unit][field] = value;
+      saveManualOverrides(manualOverrides);
+      
+      // Update UI
+      computeAndRender();
+      renderUnitSummary();
+      renderManualEditFields(); // Re-render to show updated status
+      
+      // Show visual feedback
+      e.target.style.borderColor = '#f59e0b';
+      e.target.style.background = '#fef3c7';
+    });
+  });
+}
+
 // ---------- RENDER RESULTS ----------
 function computeAndRender(){
   const { results, debug } = computeAllocations();
@@ -492,12 +657,14 @@ function computeAndRender(){
 
   // table header (dynamic extras columns)
   let html = `<table class="results-table"><thead><tr><th>Unidad</th><th>Arriendo</th><th>Luz</th><th>Agua</th><th>Gas</th><th>Aseo</th>`;
-  extraNames.forEach(n => { html += `<th style="min-width:120px">${n}</th>`; });
+  extraNames.forEach(n => { html += `<th style="min-width:70px;max-width:110px;font-size:0.85rem;padding:0.3rem">${n}</th>`; });
   html += `<th>Total</th></tr></thead><tbody>`;
 
   ids.forEach(id=>{
     const r = results[id];
-    html += `<tr><td style="text-align:left">${id}</td><td>$ ${formatMoney(r.rent)}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td><td>$ ${formatMoney(r.aseo)}</td>`;
+    const hasManual = manualOverrides[id] !== undefined;
+    const rowStyle = hasManual ? ' style="background:#fef3c7"' : '';
+    html += `<tr${rowStyle}><td style="text-align:left">${id}${hasManual ? ' 🔧' : ''}</td><td>$ ${formatMoney(r.rent)}</td><td>$ ${formatMoney(r.electricity)}</td><td>$ ${formatMoney(r.water)}</td><td>$ ${formatMoney(r.gas)}</td><td>$ ${formatMoney(r.aseo)}</td>`;
     extraNames.forEach(n => {
       const v = (r.breakdown.extrasMap && r.breakdown.extrasMap[n]) ? formatMoney(r.breakdown.extrasMap[n]) : '';
       html += `<td>${v ? '$ ' + v : ''}</td>`;
@@ -557,6 +724,8 @@ function initializeUIFromState(){
   const msel = $i('summary-month-select'); if(msel){ msel.innerHTML=''; const now=new Date(); months.forEach((m,i)=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; if(i===now.getMonth()) o.selected=true; msel.appendChild(o); }); }
   // render summary controls initially
   renderUnitSummary();
+  // render manual edit fields initially
+  renderManualEditFields();
 }
 
 function syncAndSave(){
